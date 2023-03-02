@@ -1,26 +1,28 @@
 
-
 #include "at45db641e.h"
-#include "stdbool.h"
+#include "stm32f4xx_hal.h"
+#include <stdio.h>
+#include "cmsis_os2.h"
+
 
 SPI_HandleTypeDef hspi1;
 
-
 extern void Error_Handler(void);
-
-
 uint32_t memory_size = ALL_SIZE;
 uint16_t page_write = WRITE_ADT_ST;   //с какой страницы начинаем запись
-//Вообще это хранилка адреса, что, куда и когда писали
-//Её тоже надобно хранить
-//в целях теста по записи пары файлов,объявим её пока так
 
 
-void SPI2_Init(void)
+
+
+
+
+/**
+* @brief SPI1 Initialization Function
+* @param None
+* @retval None
+*/
+void SPI1_Init(void)
 {
-   
-   SPI_GPIO_Init();
-   
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_MASTER;
   hspi1.Init.Direction = SPI_DIRECTION_2LINES;
@@ -33,6 +35,7 @@ void SPI2_Init(void)
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
   hspi1.Init.CRCPolynomial = 10;
+  
   if (HAL_SPI_Init(&hspi1) != HAL_OK)
   {
     Error_Handler();
@@ -40,50 +43,35 @@ void SPI2_Init(void)
 }
 
 
-void SPI_GPIO_Init(void)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-  
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-  
-  /*Configure GPIO pin Output Level */
-  CS_RESET;
-  
-  GPIO_InitStruct.Pin = CS_PIN;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_PULLUP;
-  HAL_GPIO_Init(CS_PORT, &GPIO_InitStruct);
-  /* Не забудь добавить свои пины mosi, miso,
-  и подать тактирование */
-  
-}
 
-/*---------------------------------------------------------------------------*/
+/**
+Функция считывает идентификационная информация
+без параметров
+return AT45_OK - если чтение прошло успешно
+AT45_ERR - если чтение с ошибкой
+*/
 uint8_t ad45test(void) 
 {
   
   HAL_StatusTypeDef result_1, result_2;
-  
-  // read the device id
-  
-  uint8_t opcode[1] = { 0x9F };
+  uint8_t opcode = READ_ID;
   uint8_t devid_res[5];
   
   CS_RESET;
-  result_1 = HAL_SPI_Transmit(&hspi1, opcode, sizeof(opcode), 500);
-  result_2 = HAL_SPI_Receive(&hspi1, devid_res, sizeof(devid_res), 500);
+  result_1 = HAL_SPI_Transmit(&hspi1, &opcode, sizeof(opcode), TIME_OUT_SPI);
+  result_2 = HAL_SPI_Receive(&hspi1, devid_res, sizeof(devid_res), TIME_OUT_SPI);
   CS_SET;
   
   if((result_1 != HAL_OK) || (result_2 != HAL_OK)) 
   {
-#ifdef DEBUG
+#ifdef DEBUG_AT45
     printf("Error during getting the device id, res1 = %d, res2 = %d\r\n", result_1, result_2);
 #endif
-    return ERR;
+    return AT45_ERR;
   }
   else
   {  
-#ifdef DEBUG
+#ifdef DEBUG_AT45
     printf("Manufacturer ID: 0x%02X\r\n"
            "Device ID (byte 1): 0x%02X\r\n"
              "Device ID (byte 2): 0x%02X\r\n"
@@ -93,309 +81,428 @@ uint8_t ad45test(void)
                    devid_res[0], devid_res[1], devid_res[2],
                    devid_res[3], devid_res[4]);
 #endif
-    return OK;
+    return AT45_OK;
   }
 }
-/*---------------------------------------------------------------------------*/
-uint8_t at45_read_status(void)
-{
-  
-  uint8_t opcode[1] = { 0xD7 };
-  uint8_t result[1];
-  
-  CS_RESET;
-  HAL_SPI_Transmit(&hspi1, opcode, sizeof(opcode), 500);
-  HAL_SPI_Receive(&hspi1, result, sizeof(result), 500);
-  CS_SET;
-  return result[0];
-}
-/*---------------------------------------------------------------------------*/
 
-/* 
-uint16_t page – номер читаемой страницы (0 – 32767) у нас 16мб памяти
-uint16_t addr – адрес байта внутри страницы (0 – 255) 256 бит страница
-uint32_t length – количество читаемых бит
-uint8_t *out – указатель, куда класть прочитанные данные
+
+/** Чтение регистра статуса(Этот регистр только для чтения)
+Без параметров
+retrun - возращает два байта регистра статуса 
+В случае ошибки возращает 0xFFFF
 */
-uint8_t at45_read_data(uint16_t page, uint16_t addr, uint32_t length, uint8_t *out)
+uint16_t at45_read_status(void)
 {
-  register  uint8_t res;
-  register  uint32_t timeout=0;  
-  register  uint32_t map_addr;
-  //uint8_t  state;      //rd   adr  adr  adr  magick byte
-  uint8_t  opcode[5] = { 0x0B,0x00,0x00,0x00,0x00 };/* 0x0b- Чтение*/
-  //uint8_t comm[1] = { 0xFE };
-  
-  if(page>=32768) //За границей страниц памяти
-    return ERR;
-  //Ожидаем готовности
-  do 
-  {
-    res = at45_read_status();
-    timeout++;
-    
-    if(timeout>=1000)
-      return ERR; 
-  } 
-  while (!(res & 0x80)); 
-  //Формируем адрес для чтения 
-  map_addr = ((page << 8) | (addr & 0xFF));
-  
-  /* Тут можно дописать универсальность под обе страницы памяти
-  if (state & 0x01) //256
-  else //264
-  map_addr = ((page << 10) | (addr & 0x3FF));//тут тоже допилить
-  */
-  //Формируем адрес читаемой страницы,а читать будем с нуля
-  //opcode[0] = (uint8_t)(0x0B);
-  opcode[1] = (uint8_t)(opcode[1] | (map_addr >> 16));
-  opcode[2] = (uint8_t)(opcode[2] | (map_addr>> 8));
-  opcode[3] = (uint8_t)(map_addr);
-  //opcode[4] = (uint8_t)(0x00); //Магический байти
+  HAL_StatusTypeDef result_1, result_2;
+  uint16_t result;
+  uint8_t opcode = READ_SR;
   
   CS_RESET;
-  
-  HAL_SPI_Transmit(&hspi1, opcode, sizeof(opcode), HAL_MAX_DELAY);
-  
-  for (int j = 0; j < length; j++)
-    HAL_SPI_Receive(&hspi1, out + j, 1, HAL_MAX_DELAY);
-  
+  result_1 = HAL_SPI_Transmit(&hspi1, &opcode , sizeof(opcode), MAX_BYTE_TIME);
+  result_2 = HAL_SPI_Receive(&hspi1, (uint8_t *)(&result), sizeof(result), MAX_BYTE_TIME * sizeof(opcode));
   CS_SET;
   
-  return OK;
-}
-/*---------------------------------------------------------------------------*/
-
-
-/*---------------------------------------------------------------------------*/
-uint8_t at45_page_write(uint16_t page, uint8_t *data, uint16_t length)
-{
-  uint8_t res;
-  uint32_t timeout=0;                         
-  //buff|1dum 15addr|8dummy|)
-  uint8_t opcode[4]  = {0x84,0x00,0x00,0x00}; //com-записи в буфер1 
-  //Мы начинаем для удобства с нулевого адреса
-  uint8_t command[1] = {0x88}; //комманда - Записать содержиемое буф. в память
-  //без затирания, при первой инициализации мы будем полностью стирать
-  //микру, потом в неё писать,так намного быстрее
-  uint8_t page_addr[3] = {0x00,0x00,0x00};
-  //uint8_t result; 
-  
-  if(length>256) //Данные больше чем страница памяти
-    return ERR;
-  
-  if(page>=32768) //Максимумальное количество страниц
-    return ERR;
-  
-  //формируем адрес исходя из размера страницы
-  page_addr[0] = (uint8_t)(page >> 8);
-  page_addr[1] =  ((uint8_t)((page & 0xFF)));
-  
-  
-  CS_RESET;//отпправляем ком. запис в буфер
-  HAL_SPI_Transmit(&hspi1, opcode, sizeof(opcode), HAL_MAX_DELAY);
-  
-  for (int i = 0; i < length; i++) //Набиваем буфер даннымм
+  if((result_1 != HAL_OK) || (result_2 != HAL_OK))
   {
-    HAL_SPI_Transmit(&hspi1, data+i, 1, HAL_MAX_DELAY);
-  }
-  CS_SET;
-  
-  CS_RESET; //Отправляем 0x83(Запись в буффер) по адресу в основной памяти
-  HAL_SPI_Transmit(&hspi1, command, 1, HAL_MAX_DELAY);
-  HAL_SPI_Transmit(&hspi1, page_addr, sizeof(page_addr), HAL_MAX_DELAY); 
-  CS_SET;
-  
-  
-  do 
-  {
-    res = at45_read_status();
-    timeout++;
-    
-    if(timeout>=1000)
-      return ERR; 
-  } 
-  while (!(res & 0x80)); 
-  
-  return OK;
-}
-/*---------------------------------------------------------------------------*/
-
-
-/*---------------------------------------------------------------------------*/
-void at45_set_512(void) //Задать размер 512
-{
-  uint8_t  res;
-  uint8_t opcode[4] = {0x3d,0x2a,0x80,0xa6};
-  
-  do 
-  {
-    res = at45_read_status();
-  } 
-  while (!(res & 0x80));  
-  
-  CS_RESET;
-  HAL_SPI_Transmit(&hspi1, opcode, sizeof(opcode), HAL_MAX_DELAY);
-  CS_SET;
-}
-/*---------------------------------------------------------------------------*/
-
-
-/*---------------------------------------------------------------------------*/
-void at45_full_erase(void)
-{
-  uint8_t  res;
-  uint8_t opcode[4] = {0xc7,0x94,0x80,0x9a};
-  
-  do 
-  {
-    res = at45_read_status();
-  } 
-  while (!(res & 0x80));  
-  
-  
-  CS_RESET;
-  HAL_SPI_Transmit(&hspi1, opcode, sizeof(opcode), HAL_MAX_DELAY);
-  CS_SET;
-  memory_size=ALL_SIZE;
-  
-  
-  do 
-  {
-    res = at45_read_status();
-  } 
-  while (!(res & 0x80)); 
-  
-#ifdef DEBUG
-  printf("at45 free memory = %d Mbyte\r\n", memory_size/ONE_MB);
+#ifdef DEBUG_AT45
+    printf("Error read status register\n");
 #endif
-}
-/*---------------------------------------------------------------------------*/
-
-
-/*---------------------------------------------------------------------------*/
-uint8_t at45_reset(void)
-{
-  uint8_t  res;
-  uint8_t  opcode[4] = {0xf0,0x00,0x00,0x00};//Комманда рестарта
-  uint32_t timeout=0;
-  
-  do //Готова ли микросхема к ресесту?
-  {
-    res = at45_read_status();
-    timeout++;
-    
-    if(timeout>=1000)
-      return ERR; 
-  } 
-  while (!(res & 0x80));  
-  
-  
-  CS_RESET;
-  HAL_SPI_Transmit(&hspi1, opcode, sizeof(opcode), HAL_MAX_DELAY);
-  CS_SET;
-#ifdef DEBUG
-  printf("Restart at45... \r\n");
-#endif
-  do //Ждём окончания рестарта
-  {
-    res = at45_read_status();
-    timeout++;
-    
-    if(timeout>=1000)
-      return ERR; 
-  } 
-  while (!(res & 0x80));  
-  
-  return OK; 
-  
-}
-/*---------------------------------------------------------------------------*/
-
-
-/*---------------------------------------------------------------------------*/
-/*
-uint8_t write_file(char* file_name, InfoFile_str* fill)
-{
-  
-  uint32_t bytesread=0;
-  int32_t  size;
-  uint8_t buff_write[256]={0};
-  
-  if(f_open(&WavFile,file_name,FA_OPEN_EXISTING | FA_READ) == FR_OK)
-  {
-    size = WavFile.obj.objsize-44;
-    strcpy (fill->name, file_name);
-    fill->size = WavFile.obj.objsize-44;
-    fill->adr =  page_write;
-    
-    
-    f_lseek(&WavFile, 44); //В начало файла 
-	
-    while(size!=0) //или page>32767
-    { //читаем кусочек
-      if(f_read (&WavFile, &buff_write[0], 256, &bytesread)!=FR_OK)
-      {
-        Error_Handler();
-        f_close(&WavFile);
-        return ERR;
-      }     				
-					
-      //Пишем кусочек
-      if(at45_page_write(page_write, buff_write, 256)!=OK)
-      {
-        Error_Handler();
-        f_close(&WavFile);
-        return ERR;
-      }
-      
-      page_write++;
-      size = size - bytesread;
-      
-      if(size<=0)
-        size=0;
-    }
-    
-    f_close(&WavFile);
-    memory_size -= WavFile.obj.objsize; 
-#ifdef DEBUG
-    printf("at45 free memory = %d Kb, \r\n", memory_size/ONE_MB); 
-#endif
-    return OK;
+    return 0xFFFF;
   }
   else
-    return ERR;
-}
-*/
-/*---------------------------------------------------------------------------*/
-
-
-
-/*---------------------------------------------------------------------------*/
-//Читать целый кусок файла 
-/*
-uint16_t at45_read_part(uint16_t pg, uint32_t size, uint8_t* reciv)
-{ 
-  register uint16_t iter=0;
-  register uint16_t step=0; 
-  
-  iter = size/256; //вычислим количество чтений
-  
-  do 
   {
-    if(at45_read_data(pg, 0, 256, reciv+(step*PAGE_READ))==OK)
-    {
-      pg++;
-      step++;
-    }
-    else
-    {
-      AudioPlay_Stop();
-      return ERR;
-    }
-    
-  } while (step<iter); //
+    parsing_at45_status(result);
+    return result;
+  }
   
-  return pg; //Возвращаем кол-во прочитанных страниц
 }
+
+
+/**
+Парсинг регистра статуса, сделан для отладки
+tb_sr - два байт регистра статуса
+noreturn
 */
+void parsing_at45_status(uint16_t tb_sr)
+{
+  uint8_t status[2];
+  
+  status[0] = (uint8_t)(tb_sr);         //byte - 1
+  status[1] = (uint8_t)(tb_sr >> 8);    //byte - 2
+  
+#ifdef DEBUG_AT45
+  
+  if(status[0] & (1 << 7)) 
+    printf("Device is ready\n");
+  else
+    printf("Device is busy with an internal operation\n");
+  
+  if(status[0] & (1 << 6)) 
+    printf("Main memory page data does not match buffer data.\n");
+  else
+    printf("Main memory page data matches buffer data\n");
+  
+  if(status[0] & (1 << 1)) 
+    printf("Sector protection is enabled.\n");
+  else
+    printf("Sector protection is disabled.\n");
+  
+  if(status[0] & (1 << 0)) 
+    printf("Device is configured for \"power of 2\" binary page size (256 bytes).\n");
+  else
+    printf("Device is configured for standard DataFlash page size (264 bytes).\n");
+  
+  if(status[1] & (1 << 7))
+    printf("Device is ready.\n");
+  else
+    printf("Device is busy with an internal operation.\n");
+  
+  if(status[1] & (1 << 5))
+    printf("Erase or program error detected.\n");
+  else
+    printf("Erase or program operation was successful.\n");
+  
+  if(status[1] & (1 << 3))
+    printf("Sector Lockdown command is enabled.\n");
+  else
+    printf("Sector Lockdown command is disabled.\n");
+  
+  if(status[1] & (1 << 2))
+    printf("A sector is program suspended while using Buffer 2.\n");
+  else
+    printf("No program operation has been suspended while using Buffer 2.\n");
+  
+  if(status[1] & (1 << 1))
+    printf("A sector is program suspended while using Buffer 1.\n");
+  else
+    printf("No program operation has been suspended while using Buffer 1.\n");
+  
+  if(status[1] & (1 << 0))
+    printf("A sector is erase suspended.\n");
+  else
+    printf("No sectors are erase suspended\n");
+  
+#endif
+}
+
+
+/**
+uint16_t page – номер читаемой страницы (0 – 32767) у нас 8мб памяти
+uint8_t addr – адрес байта внутри страницы (0 – 255) 256 бит страница
+uint8_t *dst – указатель, куда класть прочитанные данные
+uint32_t length – количество читаемых бит
+*/
+uint8_t at45_read_data(const uint16_t page,
+                       const uint8_t addr,
+                       uint8_t * dst,
+                       const uint32_t len)
+{
+  //uint8_t  state;     // 0x0b   adr  adr  adr  Dummy
+  uint8_t  opcode[5] = { CAR_HFM, 0x00,0x00,0x00,DUMMY8B };        
+  
+  if( page > ALL_PAGES) 
+    return AT45_ERR;
+  
+  if(!at45_ready())
+    return AT45_ERR;
+  
+  //Формируем адрес читаемой страницы,а читать будем с нуля
+  opcode[1] = (uint8_t)(page >> 8);
+  opcode[2] = (uint8_t)page;
+  opcode[3] = (uint8_t)addr;
+  
+  /*The CS pin must remain low during the loading of the opcode, 
+  the address bytes, the dummy byte, and the reading of data*/
+  CS_RESET;
+  if(HAL_OK != HAL_SPI_Transmit(&hspi1, opcode, sizeof(opcode), sizeof(opcode) * MAX_BYTE_TIME))
+    return AT45_ERR;
+  
+  if(HAL_OK != HAL_SPI_Receive(&hspi1, dst, len, MAX_BYTE_TIME * len))
+    return AT45_ERR;
+  
+  CS_SET;
+  
+  return AT45_OK;
+}
+
+/**
+Запись данных в один из доступных буферов
+const uint8_t * data - указатель на данные
+const uint32_t len - длина передаваемых данных             
+const uint8_t bufn - номер используемого буфера
+const uint8_t addr - адрес(0-255) для записи в буфер
+return AT45_OK/AT45_ERR; 
+*/
+uint8_t at45_load_to_buff(const uint8_t * data,
+                          const uint32_t len,
+                          const uint8_t addr,
+                          const uint8_t bufn)
+{
+  //--------------------comm | 16 dummy bits | 8 bit adress
+  uint8_t opcode[4]  = {0x00, DUMMY8B, DUMMY8B, addr}; 
+  
+  if(len > 256U) return AT45_ERR;              //max len buff 256 byte
+  
+  switch(bufn)
+  {
+  case BUFFER1: opcode[0] = LOAD_BUF1; break;   //load to buf1
+  case BUFFER2: opcode[0] = LOAD_BUF2; break;   //load to buf2
+  default: return AT45_ERR; break;              //wrong operation
+  }
+  
+  CS_RESET;                                     
+  if(HAL_OK != HAL_SPI_Transmit(&hspi1, opcode, sizeof(opcode), MAX_BYTE_TIME * sizeof(opcode)))
+    return AT45_ERR;
+  if(HAL_OK != HAL_SPI_Transmit(&hspi1, (uint8_t *)data, len, MAX_BYTE_TIME * len))
+    return AT45_ERR;
+  CS_SET;
+  
+  return AT45_OK;
+}
+
+
+/**
+Запись буфера 1 или 2, в страницу основной памяти 
+const uint16_t page - номер страницы(0-32767)
+const uint8_t bufn - LOAD_BUF1/LOAD_BUF2(из какого буфера писать в память)
+return AT45_OK/AT45_ERR; 
+*/
+uint8_t at45_write_to_main(const uint16_t page, const uint8_t bufn)
+{
+  //--------------------------com |8dummy bits |15b addr + 1 dummy bit
+  uint8_t com_page_addr[4] = {0x00,DUMMY8B,0x00,0x00};
+  
+  switch(bufn)
+  {
+  case BUFFER1: com_page_addr[0] = WR_FR_BUF1; break;   //write to memory data from buf1
+  case BUFFER2: com_page_addr[0] = WR_FR_BUF2; break;   //write to memory data from buf2
+  default: return AT45_ERR; break;         //wrong operation
+  }
+  
+  /* формируем адрес страницы */
+  com_page_addr[1] = (uint8_t)(page >> 8);          //MSB
+  com_page_addr[2] = (uint8_t)(page);               //LSB
+  
+  /* Запишем данные из буфера N, по адресу page_addr */
+  CS_RESET; 
+  if(HAL_OK != HAL_SPI_Transmit(&hspi1, com_page_addr, sizeof(com_page_addr), MAX_BYTE_TIME * sizeof(com_page_addr)))
+    return AT45_ERR;
+  CS_SET;
+
+  return AT45_OK;
+}
+
+
+
+/* Запись в страницу at45 
+const uint16_t page - номер страницы от 0 до 32767
+const uint8_t addr - с какого байта на странице писать(0-255)
+const uint8_t * src - указатель на записываемые данные
+const uint32_t length - длина передаваемых данных в байтах
+const uint8_t bufn - нз какого буфера
+return - AT45_ERR/AT45_OK;
+*/
+uint8_t at45_page_write(const uint16_t page, 
+                        const uint8_t addr,
+                        const uint8_t * src, 
+                        const uint32_t len,
+                        const uint8_t bufn)
+{ 
+  /* Данные больше чем страница памяти или максимумальное количество страниц */
+  if( len > PAGE_SIZE || page > ALL_PAGES) 
+    return AT45_ERR;
+  
+  if(!at45_ready())
+    return AT45_ERR;
+  
+  /* отпправляем ком.записи в буфер и наполняем данными */ 
+  if(!at45_load_to_buff(src, len, addr, bufn))
+    return AT45_ERR;
+  
+  /* Запишем данные из буфера по адресу page */
+  if(!at45_write_to_main(page, bufn))
+    return AT45_ERR;
+  
+  if(!at45_ready())
+    return AT45_ERR;
+  
+  return AT45_OK;
+}
+
+/** Важно!!! Пишем по 2 страницы !!!
+Для ускорения записи и мы будем писать по 512 байт, 256 в буф1 и 256 в буф2;
+т.е. открываем файл, пусть 1.wav на 61,3 КБ (62 820 байт)
+62280 / 256(одна страница) = 245 записей, остаток 100 байт;
+но т.к. мы пишем по странице, вместо 100 байт мы запишем 256, +256 байт.
+Итого - 247 записей.
+Мы проигрываем в использовании памяти, но упрощаем адресацию.
+*/
+uint8_t at45_2page_write(uint16_t page, uint8_t * src, uint32_t len)
+{
+  if(len > (PAGE_X_2) || page > ALL_PAGES ) 
+    return AT45_ERR;
+  
+  if(!at45_page_write(page, 0x00, src, len/2, BUFFER1))
+    return AT45_ERR;
+  
+  if(!at45_page_write(page + 1, 0x00, src + 256, len/2, BUFFER2))
+    return AT45_ERR;
+  
+  return AT45_OK;
+}
+     
+     
+
+/** Функция установки размера страницы 256 байт
+uint8_t opcode - SIZE_256 или SIZE_264
+return AT45_OK или return AT45_ORR;
+*/
+uint8_t at45_set_ps(uint8_t opc)
+{
+  uint8_t  res;
+  uint32_t opcode = 0x00802A3D | (opc << 24);
+  
+  /* Проверка на ввод правильной команды */
+  if( (opc != SIZE_256) && (opc != SIZE_264) )       
+    return AT45_ERR;
+  
+  if(!at45_ready())
+    return AT45_ERR;
+  
+  CS_RESET;
+  res = HAL_SPI_Transmit(&hspi1, (uint8_t *)&opcode, sizeof(opcode), HAL_MAX_DELAY);
+  CS_SET;
+  
+  if(res != HAL_OK)
+    return AT45_ERR;
+  
+  return AT45_OK;
+}
+
+/**
+Функция проверки установленного размера страницы
+без аргументов
+return value SIZE_256/SIZE_264/AT45_ERR - в случае проблемы работы с spi
+*/
+uint8_t at45_ps_read(void)
+{
+  HAL_StatusTypeDef res1, res2;
+  uint8_t result[2];            //но нам нужен только первый байт
+  uint8_t opcode = READ_SR;
+  
+  CS_RESET;
+  res1 = HAL_SPI_Transmit(&hspi1, &opcode , sizeof(opcode), TIME_OUT_SPI);
+  res2 = HAL_SPI_Receive(&hspi1, (uint8_t *)(&result), sizeof(result), TIME_OUT_SPI);
+  CS_SET;
+  
+  if((res1 != HAL_OK) || (res2 != HAL_OK))
+    return AT45_ERR;
+  else
+  {
+    if(result[0] & (1 << 0))
+      return SIZE_256;
+    else
+      return SIZE_264;
+  }
+}
+
+
+
+/** Полное стирание at45 Важно!!! от 80 до 208s по докам.
+uin32_t * free_mem - указатель на свободное место в at45
+return - AT45_ERR/AT45_OK
+*/
+uint8_t at45_full_erase(uint32_t * free_mem)
+{
+  uint32_t timeout = 0;
+  uint8_t res;
+  uint32_t opcode = FULL_ERASE;
+  
+  
+  if(!at45_ready())
+    return AT45_ERR;
+  
+  CS_RESET;
+  res = HAL_SPI_Transmit(&hspi1, (uint8_t *)&opcode, sizeof(opcode), HAL_MAX_DELAY);
+  CS_SET;
+  
+  if(res != HAL_OK)
+    return AT45_ERR;
+  
+  while (!(at45_read_status() & 0x80))  
+  {
+    
+#ifdef RTOS
+    osDelay(1);
+#else
+    HAL_Delay(1);
+#endif
+    timeout++;
+    
+    if(timeout >= MAX_FULL_ERASE_TIME)
+      return AT45_ERR;
+  } 
+  
+  *free_mem = ALL_SIZE;
+  
+#ifdef DEBUG_AT45
+  printf("at45 free memory = %d Mbyte\r\n", memory_size/ONE_MB);
+#endif
+  
+  return AT45_OK;
+}
+
+
+
+/* Функция рестарта at45
+Используется для немедленной приостановки операций
+Без аргументов
+return AT45_OK - в случае успешного рестарта
+ERR - ошибка*/
+uint8_t at45_reset(void)
+{
+  uint32_t opcode = RESTART;
+  
+  //Готова ли микросхема к ресесту?
+  if(!at45_ready())
+    return AT45_ERR;
+  
+  
+  CS_RESET;
+  HAL_SPI_Transmit(&hspi1, (uint8_t *)(&opcode), sizeof(opcode), TIME_OUT_SPI);
+  CS_SET;
+  
+#ifdef DEBUG_AT45
+  printf("Restart at45... \r\n");
+#endif
+  
+  if(!at45_ready())
+    return AT45_ERR;
+  
+  return AT45_OK;  
+}
+
+/**  Функция проверки готовности at45 к транзакциям
+note: При записи или стирания, at45 будет устанавливать в регистре статуса
+флаг BUSY;
+
+без аргументов
+return AT45_OK - если at45 готова к транзакциям
+AT45_ERR - в случае BUSY
+*/
+uint8_t at45_ready(void)
+{
+  uint16_t timeout = 0;
+  
+  while (!(at45_read_status() & 0x0080)) 
+  {
+    timeout++;
+    
+    if(timeout >= 1000U)
+      return AT45_ERR; 
+  } 
+  
+  return AT45_OK;
+}
+
+
