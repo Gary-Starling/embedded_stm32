@@ -8,19 +8,7 @@
 SPI_HandleTypeDef hspi1;
 
 extern void Error_Handler(void);
-uint32_t memory_size = ALL_SIZE;
-uint16_t page_write = WRITE_ADT_ST;   //с какой страницы начинаем запись
 
-
-
-
-
-
-/**
-* @brief SPI1 Initialization Function
-* @param None
-* @retval None
-*/
 void SPI1_Init(void)
 {
   hspi1.Instance = SPI1;
@@ -186,30 +174,31 @@ void parsing_at45_status(uint16_t tb_sr)
 }
 
 
-/**
+/** Чтение данных из страницы
 uint16_t page – номер читаемой страницы (0 – 32767) у нас 8мб памяти
 uint8_t addr – адрес байта внутри страницы (0 – 255) 256 бит страница
 uint8_t *dst – указатель, куда класть прочитанные данные
-uint32_t length – количество читаемых бит
+uint32_t length – количество читаемых байт
 */
-uint8_t at45_read_data(const uint16_t page,
+uint8_t at45_read_page(const uint16_t page,
                        const uint8_t addr,
                        uint8_t * dst,
                        const uint32_t len)
 {
-  //uint8_t  state;     // 0x0b   adr  adr  adr  Dummy
+  //uint8_t  state;     // 0x0b|adr_page|adr_in_page|Dummy
   uint8_t  opcode[5] = { CAR_HFM, 0x00,0x00,0x00,DUMMY8B };        
   
-  if( page > ALL_PAGES) 
+  if( page > ALL_PAGES - 1) 
     return AT45_ERR;
   
   if(!at45_ready())
     return AT45_ERR;
   
-  //Формируем адрес читаемой страницы,а читать будем с нуля
-  opcode[1] = (uint8_t)(page >> 8);
-  opcode[2] = (uint8_t)page;
-  opcode[3] = (uint8_t)addr;
+  //Формируем адрес читаемой страницы
+  opcode[1] = (uint8_t)((page & 0xFF00) >> 8);
+  opcode[2] = (uint8_t)((page & 0x00FF) >> 0);
+  //адрес внутри страницы
+  opcode[3] = (uint8_t)(addr);
   
   /*The CS pin must remain low during the loading of the opcode, 
   the address bytes, the dummy byte, and the reading of data*/
@@ -222,6 +211,42 @@ uint8_t at45_read_data(const uint16_t page,
   
   CS_SET;
   
+  return AT45_OK;
+}
+
+
+///!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+///!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+///!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+///!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+///!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+///!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//TODO: чтение произвольного участка 
+uint8_t at45_read_byte_adr(uint8_t * dst,
+                  const uint32_t addr,
+                  const uint32_t len)
+{
+  
+  if(addr > ALL_SIZE - 1 )
+    return AT45_ERR;
+  
+  if(!at45_read_page(addr / PAGE_SIZE, addr % PAGE_SIZE, dst, len))
+    return AT45_ERR;
+  
+    return AT45_OK;
+}
+
+///!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+///!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+///!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+///!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+///!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+///!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+//TODO: запись в произвольный участок
+uint8_t at45_write_byte_adr(uint8_t * dst,
+                            const uint32_t addr,
+                            const uint32_t len)
+{
   return AT45_OK;
 }
 
@@ -262,26 +287,43 @@ uint8_t at45_load_to_buff(const uint8_t * data,
 
 
 /**
-Запись буфера 1 или 2, в страницу основной памяти 
+Запись буфера 1 или 2, в страницу основной памяти со стиранием или без
 const uint16_t page - номер страницы(0-32767)
-const uint8_t bufn - LOAD_BUF1/LOAD_BUF2(из какого буфера писать в память)
+const uint8_t bufn - BUFFER1/BUFFER2(из какого буфера писать в память)
+const uint8_t er
 return AT45_OK/AT45_ERR; 
 */
-uint8_t at45_write_to_main(const uint16_t page, const uint8_t bufn)
+uint8_t at45_write_to_main(const uint16_t page,
+                           const uint8_t bufn,
+                           const uint8_t er)
 {
-  //--------------------------com |8dummy bits |15b addr + 1 dummy bit
-  uint8_t com_page_addr[4] = {0x00,DUMMY8B,0x00,0x00};
+  //---------------------------com|15b addr+1 dummy bit|8dummy bits 
+  uint8_t com_page_addr[4] = {0x00,0x00,0x00,DUMMY8B};
   
   switch(bufn)
   {
-  case BUFFER1: com_page_addr[0] = WR_FR_BUF1; break;   //write to memory data from buf1
-  case BUFFER2: com_page_addr[0] = WR_FR_BUF2; break;   //write to memory data from buf2
+    
+  case BUFFER1: //write to memory data from buf1 
+    if(er)
+      com_page_addr[0] = WR_FR_BUF1_E;
+    else
+      com_page_addr[0] = WR_FR_BUF1_NOE;
+    break;   
+    
+  case BUFFER2: //write to memory data from buf2
+    if(er)
+      com_page_addr[0] = WR_FR_BUF2_E;
+    else
+      com_page_addr[0] = WR_FR_BUF2_NOE;
+    break;   
+    
   default: return AT45_ERR; break;         //wrong operation
+  
   }
   
   /* формируем адрес страницы */
-  com_page_addr[1] = (uint8_t)(page >> 8);          //MSB
-  com_page_addr[2] = (uint8_t)(page);               //LSB
+  com_page_addr[1] = (uint8_t)( (page & 0xFF00) >> 8);          //MSB
+  com_page_addr[2] = (uint8_t)( (page & 0x00FF) >> 0);          //LSB
   
   /* Запишем данные из буфера N, по адресу page_addr */
   CS_RESET; 
@@ -294,22 +336,25 @@ uint8_t at45_write_to_main(const uint16_t page, const uint8_t bufn)
 
 
 
-/* Запись в страницу at45 
+/* Запись в страницу at45 без стирания
+Страница должна быть стёрта перед записью.
+Записывается целый буфер.
+
 const uint16_t page - номер страницы от 0 до 32767
-const uint8_t addr - с какого байта на странице писать(0-255)
+const uint8_t addr - с какого байта писать в буфер(0-255)
 const uint8_t * src - указатель на записываемые данные
 const uint32_t length - длина передаваемых данных в байтах
-const uint8_t bufn - нз какого буфера
+const uint8_t bufn - нз какого буфера идёт запись в память
 return - AT45_ERR/AT45_OK;
 */
-uint8_t at45_page_write(const uint16_t page, 
+uint8_t at45_page_write_noer(const uint16_t page, 
                         const uint8_t addr,
                         const uint8_t * src, 
                         const uint32_t len,
                         const uint8_t bufn)
 { 
   /* Данные больше чем страница памяти или максимумальное количество страниц */
-  if( len > PAGE_SIZE || page > ALL_PAGES) 
+  if( len > PAGE_SIZE || page > ALL_PAGES - 1) 
     return AT45_ERR;
   
   if(!at45_ready())
@@ -320,7 +365,7 @@ uint8_t at45_page_write(const uint16_t page,
     return AT45_ERR;
   
   /* Запишем данные из буфера по адресу page */
-  if(!at45_write_to_main(page, bufn))
+  if(!at45_write_to_main(page, bufn, 0))
     return AT45_ERR;
   
   if(!at45_ready())
@@ -329,23 +374,63 @@ uint8_t at45_page_write(const uint16_t page,
   return AT45_OK;
 }
 
-/** Важно!!! Пишем по 2 страницы !!!
+/* Запись в страницу at45 с предварительным стиранием.
+Записывается целый буфер
+const uint16_t page - номер страницы от 0 до 32767
+const uint8_t addr - с какого байта писать в буфер(0-255)
+const uint8_t * src - указатель на записываемые данные
+const uint32_t length - длина передаваемых данных в байтах
+const uint8_t bufn - нз какого буфера
+return - AT45_ERR/AT45_OK;
+*/
+uint8_t at45_page_write_er(const uint16_t page, 
+                        const uint8_t addr,
+                        const uint8_t * src, 
+                        const uint32_t len,
+                        const uint8_t bufn)
+{ 
+  /* Данные больше чем страница памяти или максимумальное количество страниц */
+  if( len > PAGE_SIZE || page > ALL_PAGES - 1) 
+    return AT45_ERR;
+  
+  if(!at45_ready())
+    return AT45_ERR;
+  
+  /* отпправляем ком.записи в буфер и наполняем данными */ 
+  if(!at45_load_to_buff(src, len, addr, bufn))
+    return AT45_ERR;
+  
+  /* Запишем данные из буфера по адресу page */
+  if(!at45_write_to_main(page, bufn, 1))
+    return AT45_ERR;
+  
+  if(!at45_ready())
+    return AT45_ERR;
+  
+  return AT45_OK;
+}
+
+/** 
+Функция записи двух страниц памяти
+NOTE: Важно!!! Пишем по 2 страницы !!!
 Для ускорения записи и мы будем писать по 512 байт, 256 в буф1 и 256 в буф2;
 т.е. открываем файл, пусть 1.wav на 61,3 КБ (62 820 байт)
 62280 / 256(одна страница) = 245 записей, остаток 100 байт;
 но т.к. мы пишем по странице, вместо 100 байт мы запишем 256, +256 байт.
 Итого - 247 записей.
 Мы проигрываем в использовании памяти, но упрощаем адресацию.
+
+uint16_t page, uint8_t * src, uint32_t len
 */
 uint8_t at45_2page_write(uint16_t page, uint8_t * src, uint32_t len)
 {
-  if(len > (PAGE_X_2) || page > ALL_PAGES ) 
+  if(len > (PAGE_X_2) || page > ALL_PAGES - 1 ) 
     return AT45_ERR;
   
-  if(!at45_page_write(page, 0x00, src, len/2, BUFFER1))
+  if(!at45_page_write_noer(page, 0x00, src, len/2, BUFFER1))
     return AT45_ERR;
   
-  if(!at45_page_write(page + 1, 0x00, src + 256, len/2, BUFFER2))
+  if(!at45_page_write_noer(page + 1, 0x00, src + 256, len/2, BUFFER2))
     return AT45_ERR;
   
   return AT45_OK;
@@ -445,10 +530,40 @@ uint8_t at45_full_erase(uint32_t * free_mem)
   
   *free_mem = ALL_SIZE;
   
-#ifdef DEBUG_AT45
-  printf("at45 free memory = %d Mbyte\r\n", memory_size/ONE_MB);
+#ifdef DEBUG_AT45           
+  printf("at45 free memory = %d Mbyte\r\n", ALL_SIZE/ONE_MB);
 #endif
   
+  return AT45_OK;
+}
+
+/** Функция стирания 
+*/
+uint8_t at45_page_erase(uint16_t page)
+{
+  uint8_t res;
+  uint8_t cmd[4] = {
+    PGERASE,
+    (uint8_t)(page >> 8), //msb
+    (uint8_t)(page)    ,  //lsb
+    DUMMY8B
+  };
+  
+  if(!at45_ready())
+    return AT45_ERR;
+  
+  
+  if(page > ALL_PAGES - 1)
+    return AT45_ERR;
+  
+  CS_RESET;
+  res = HAL_SPI_Transmit(&hspi1, cmd, sizeof(cmd), 256 * MAX_BYTE_TIME);
+  CS_SET;
+  
+  if(!at45_ready())
+    return AT45_ERR;
+  
+  //
   return AT45_OK;
 }
 
