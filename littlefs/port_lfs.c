@@ -24,9 +24,7 @@ int block_at45_prog(const struct lfs_config *c, lfs_block_t block,
 {
   int res = 0; 
   
-  /* не нужно делать запись вместе со стиранием, т.к. при lfs_file_close
-  будет сначала произведено стирание блока, а потом зпись, т.е. 
-  мы два раза потрём сектор. */
+
   res = at45_page_write_noer(block, off, (uint8_t *)buffer, size, BUFFER1);
   
   if(res == AT45_ERR)
@@ -57,7 +55,7 @@ int block_at45_sync(const struct lfs_config *c)
 uint8_t lfs_read_buf[256] = {0};       
 uint8_t lfs_prog_buf[256] = {0};
 uint8_t lfs_lookahead_buf[256] = {0};	
-uint8_t lfs_file_buf[256] = {0};        //т.к. LFS_NO_MALLOC
+uint8_t lfs_file_buf[256] = {0};        //LFS_NO_MALLOC
 
 const struct lfs_config cfg = {
  /* block device operations */
