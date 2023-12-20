@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "testlib.h"
 
 void main(void)
 {
@@ -22,6 +23,9 @@ void main(void)
     *pPortDOutReg |= (1 << 14);
     *pPortDOutReg |= (1 << 13);
     *pPortDOutReg |= (1 << 12);
+
+    int res = utils_open(0);
+    res = utils_close(res);
 
     /* Loop forever */
     while (1)

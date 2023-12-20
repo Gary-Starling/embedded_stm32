@@ -11,7 +11,8 @@ SECTIONS
         _start_text = .;
         KEEP(*(.isr_vector))
         . = 0x400;
-        KEEP(*(.text*))
+        KEEP(*(.utils))
+        *(.text*)
         *(.rodata*)
         . = ALIGN(4);
         _end_text = .;

@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "testlib.h"
 
 extern unsigned int _stored_data;
 extern unsigned int _start_data;
@@ -36,13 +37,20 @@ void isr_reset(void)
         dst++;
     }
 
+    int res = utils_open(0);
+    res = utils_close(res);
+    res += 1;
+    res = res + 10;
+
+    
+
     asm volatile("cpsid i");                               /* Disable interrupts */
     VTOR = (uint32_t)app_vectors;                          /* New vector table */
     app_end_stack = (*((uint32_t *)(APP_OFFSET)));         /* Addr stack */
     app_entry = (void *)(*((uint32_t *)(APP_OFFSET + 4))); /* Addr reset handler */
 
-    asm volatile("msr msp, %0" ::"r"(app_end_stack)); /* Update stack pointer */
-    asm volatile("mov pc, %0" ::"r"(app_entry));      /* Unconditionally jump to app_entry */
+    asm volatile("msr msp, %0" ::"r"(app_end_stack));      /* Update stack pointer */
+    asm volatile("mov pc, %0" ::"r"(app_entry));           /* Unconditionally jump to app_entry */
 }
 
 void ISR_empty(void)

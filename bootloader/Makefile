@@ -1,10 +1,10 @@
 CROSS_COMPILE:=arm-none-eabi-
 CC:=$(CROSS_COMPILE)gcc
 LD:=$(CROSS_COMPILE)ld
-OBJS_APP:=startup.o main.o
-OBJS_BOOT:=boot.o
+OBJS_APP:=startup.o main.o testlib.o
+OBJS_BOOT:=boot.o testlib.o
 
-OPT = -Og
+OPT = -O0
 CPU = -mcpu=cortex-m4
 FLOAT-ABI = -mfloat-abi=hard
 FPU = -mfpu=fpv4-sp-d16
@@ -49,6 +49,8 @@ boot.elf: $(OBJS_BOOT) $(LSCRIPT_BOOT)
 boot.o: boot.c
 	$(CC) -c $(CFLAGS) boot.c
 
+testlib.o: testlib.c
+	$(CC) -c $(CFLAGS) testlib.c
 #clean
 clean:
 	rm -f *.bin *.elf *.o *.map
