@@ -1,65 +1,85 @@
-#include <stdint.h>
-#include "testlib.h"
+extern void main(void);
+extern unsigned int stext, etext, sdata, edata, lma_data, sbss, ebss;
+extern unsigned int _start_heap;
 
-extern unsigned int _stored_data;
-extern unsigned int _start_data;
-extern unsigned int _end_data;
-extern unsigned int _start_bss;
-extern unsigned int _end_bss;
+extern void *end_stack;
+static unsigned int avl_mem;
+static unsigned int sp;
 
-extern void *END_STACK;
-
-#define APP_OFFSET (0x08004000)
-#define VTOR (*(volatile uint32_t *)(0xE000ED08))
-
-void isr_reset(void)
+void ISR_reset(void)
 {
-    const uint32_t *const app_vectors = (const uint32_t *)APP_OFFSET;
-    unsigned int *src, *dst;
-    void *app_entry;
-    uint32_t app_end_stack;
+    register unsigned int *src, *dst;
 
-    /* Copy the .data section from flash to RAM. */
-    src = (unsigned int *)&_stored_data;
-    dst = (unsigned int *)&_start_data;
-    while (dst < (unsigned int *)&_end_data)
+    src = (unsigned int *)&lma_data;
+    dst = (unsigned int *)&sdata;
+
+    while (dst < (unsigned int *)&edata)
+        *dst++ = *src++;
+
+    dst = &sbss;
+    while (dst < (unsigned int *)&ebss)
+        *dst++ = 0U;
+
+    avl_mem = (unsigned int)(&end_stack) - (unsigned int)(&_start_heap);
+    // paint heap
+    asm volatile("mrs %0, msp" : "=r"(sp));
+    dst = ((unsigned int *)(&end_stack)) - (8192 / sizeof(unsigned int));
+    while ((unsigned int)dst < sp)
     {
-        *dst = *src;
+        *dst = 0xDEADC0DE;
         dst++;
-        src++;
     }
 
-    /* Initialize the BSS section to 0 */
-    dst = &_start_bss;
-    while (dst < (unsigned int *)&_end_bss)
-    {
-        *dst = 0U;
-        dst++;
-    }
+    main();
 
-    int res = utils_open(0);
-    res = utils_close(res);
-    res += 1;
-    res = res + 10;
-
-    
-
-    asm volatile("cpsid i");                               /* Disable interrupts */
-    VTOR = (uint32_t)app_vectors;                          /* New vector table */
-    app_end_stack = (*((uint32_t *)(APP_OFFSET)));         /* Addr stack */
-    app_entry = (void *)(*((uint32_t *)(APP_OFFSET + 4))); /* Addr reset handler */
-
-    asm volatile("msr msp, %0" ::"r"(app_end_stack));      /* Update stack pointer */
-    asm volatile("mov pc, %0" ::"r"(app_entry));           /* Unconditionally jump to app_entry */
+    while (1)
+        ;
 }
 
 void ISR_empty(void)
 {
+    while (1)
+        ;
 }
 
-void isr_fault(void)
+void NMI_Handler(void)
 {
-    /* Panic. */
+    while (1)
+        ;
+}
+
+void HardFault_Handler(void)
+{
+    while (1)
+        ;
+}
+
+void MemManage_Handler(void)
+{
+    while (1)
+        ;
+}
+
+void BusFault_Handler(void)
+{
+    while (1)
+        ;
+}
+
+void UsageFault_Handler(void)
+{
+    while (1)
+        ;
+}
+
+void SVC_Handler(void)
+{
+    while (1)
+        ;
+}
+
+void DebugMon_Handler(void)
+{
     while (1)
         ;
 }
@@ -145,21 +165,21 @@ __attribute__((weak)) void OTG_HS_IRQHandler(void) { ISR_empty(); }
 __attribute__((weak)) void HASH_RNG_IRQHandler(void) { ISR_empty(); }
 __attribute__((weak)) void FPU_IRQHandler(void) { ISR_empty(); }
 
-__attribute__((section(".isr_vector"))) void (*const vector[])(void) =
+__attribute__((section(".isr_v"))) void (*const vector[])(void) =
     {
-        (void (*)(void))(&END_STACK),
-        isr_reset,
-        isr_fault,
-        isr_fault,
-        isr_fault,
-        isr_fault,
-        isr_fault,
+        (void (*)(void))(&end_stack),
+        ISR_reset,
+        NMI_Handler,
+        HardFault_Handler,
+        MemManage_Handler,
+        BusFault_Handler,
+        UsageFault_Handler,
         0,
         0,
         0,
         0,
-        isr_fault,
-        isr_fault,
+        SVC_Handler,
+        DebugMon_Handler,
         0,
         PendSV_Handler,
         SysTick_Handler,

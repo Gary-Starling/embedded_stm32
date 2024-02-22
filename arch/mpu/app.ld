@@ -35,9 +35,10 @@ SECTIONS
         *(COMMON)
         . = ALIGN(4);
         ebss = .;
+        _end = .;
     } > RAM
 
 }
 
-PROVIDE(start_heap = ebss);
-top_stack  = ORIGIN(RAM) + LENGTH(RAM);
+_start_heap = _end;
+end_stack  = ORIGIN(RAM) + LENGTH(RAM);
