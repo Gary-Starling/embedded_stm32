@@ -1,8 +1,8 @@
-extern void main(void);
+extern int main(void);
 extern unsigned int stext, etext, sdata, edata, lma_data, sbss, ebss;
 extern unsigned int _start_heap;
 
-extern void *end_stack;
+extern unsigned int end_stack;
 static unsigned int avl_mem;
 static unsigned int sp;
 

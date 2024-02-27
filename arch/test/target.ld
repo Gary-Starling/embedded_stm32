@@ -1,4 +1,3 @@
-
 MEMORY
 {
 FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 1024K
@@ -6,39 +5,35 @@ RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K
 CCMRAM (rw)      : ORIGIN = 0x10000000, LENGTH = 64K
 }
 
+
 SECTIONS
 {
-    .text :
-    {
-        stext = .;
-        KEEP(*(.isr_v))
+    .text : {
+        _start_text = .;
+        KEEP(*(.isr_vector))
         *(.text*)
         *(.rodata*)
         . = ALIGN(4);
-        etext = .;
+        _end_text = .;
     } > FLASH
 
-    lma_data = .;
+    _stored_data = .;
 
-    .data : AT (lma_data)
-    {
-        sdata = .;
+    .data : AT (_stored_data) {
+        _start_data = .;
         *(.data*)
         . = ALIGN(4);
-        edata = .;
+        _end_data = .;
     } > RAM
 
-    .bss :
-    {
-        sbss = .;
+    .bss : {
+        _start_bss = .;
         *(.bss*)
         *(COMMON)
         . = ALIGN(4);
-        ebss = .;
+        _end_bss = .;
         _end = .;
     } > RAM
-
 }
 
-_start_heap = _end;
-end_stack  = ORIGIN(RAM) + LENGTH(RAM);
+END_STACK = ORIGIN(RAM) + LENGTH(RAM);

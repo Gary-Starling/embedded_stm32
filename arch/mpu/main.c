@@ -2,14 +2,19 @@
 
 static void recur_fail(void);
 
-void main(void)
+int main(void)
 {
+    int y = 0;
 
     mpu_enable();
-    recur_fail();
+    //recur_fail();
 
     while (1)
-        ;
+    {        
+        y++;
+        y += 10;
+        y *= 2;
+    }
 }
 
 static void recur_fail(void)

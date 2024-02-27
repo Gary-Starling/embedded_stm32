@@ -1,4 +1,4 @@
-extern void main(void);
+extern int main(void);
 extern unsigned int stext, etext, sdata, edata, lma_data, sbss, ebss;
 extern unsigned int start_heap;
 

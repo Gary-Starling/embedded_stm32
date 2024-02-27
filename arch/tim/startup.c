@@ -1,10 +1,7 @@
 extern int main(void);
 extern unsigned int stext, etext, sdata, edata, lma_data, sbss, ebss;
 extern unsigned int _start_heap;
-
-extern void *end_stack;
-static unsigned int avl_mem;
-static unsigned int sp;
+extern unsigned int end_stack;
 
 void ISR_reset(void)
 {
@@ -19,16 +16,6 @@ void ISR_reset(void)
     dst = &sbss;
     while (dst < (unsigned int *)&ebss)
         *dst++ = 0U;
-
-    avl_mem = (unsigned int)(&end_stack) - (unsigned int)(&_start_heap);
-    // paint heap
-    asm volatile("mrs %0, msp" : "=r"(sp));
-    dst = ((unsigned int *)(&end_stack)) - (8192 / sizeof(unsigned int));
-    while ((unsigned int)dst < sp)
-    {
-        *dst = 0xDEADC0DE;
-        dst++;
-    }
 
     main();
 

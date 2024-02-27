@@ -9,14 +9,16 @@ LDFLAGS:=-T app.ld -gc-sections -nostdlib -Map=image.map
 image.bin: image.elf
 	$(OBJCOPY) -O binary $^ $@
 
-image.elf: main.o startup.o mpu.o $(LSCRIPT)
-	$(LD) $(LDFLAGS) startup.o main.o mpu.o -o $@
+image.elf: main.o startup.o sys.o tim.o $(LSCRIPT)
+	$(LD) $(LDFLAGS) startup.o main.o sys.o tim.o -o $@
 	
 startup.o: startup.c
 
 main.o: main.c
 
-mpu.o: mpu.c
+sys.o: sys.c
+
+tim.o: tim.c
 
 clean:
 	rm -f image.bin image.elf *.o image.map

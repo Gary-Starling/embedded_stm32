@@ -1,7 +1,7 @@
 #include <stdint.h>
 #include "testlib.h"
 
-void main(void)
+int main(void)
 {
     uint32_t *pClkCtrlReg = (uint32_t *)0x40023830;
     uint32_t *pPortDModeReg = (uint32_t *)0x40020C00;

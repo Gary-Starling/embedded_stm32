@@ -1,6 +1,6 @@
 #include "malloc.h"
 
-void main(void)
+int main(void)
 {
     char *mem1 = NULL;
     char *mem2 = NULL;
