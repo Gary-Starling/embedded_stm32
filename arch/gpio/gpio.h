@@ -15,6 +15,7 @@
 #define GPIOD_PUPD (*(volatile uint32_t *)(GPIOD_BASE + 0x0c))
 #define GPIOD_ODR (*(volatile uint32_t *)(GPIOD_BASE + 0x14))
 #define GPIOD_BSRR (*(volatile uint32_t *)(GPIOD_BASE + 0x18))
+#define GPIOD_OSPD  (*(volatile uint32_t *)(GPIOD_BASE + 0x08))
 
 #define GPIOD_AFL (*(volatile uint32_t *)(GPIOD_BASE + 0x20))
 #define GPIOD_AFH (*(volatile uint32_t *)(GPIOD_BASE + 0x24))
