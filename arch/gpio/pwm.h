@@ -28,7 +28,7 @@
 #define TIM_CCMR1_OC1M_PWM1  (0x06 << 4)
 #define TIM_CCMR2_OC4M_PWM1  (0x06 << 12)
 
-int pwm_init(uint32_t clock, uint32_t dutycycle);
+int pwm_init(uint32_t MCUclock, uint32_t dutycycle, uint32_t PWMclock);
 void led_pwm_init(void);
 
 #endif

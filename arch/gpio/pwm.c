@@ -1,17 +1,41 @@
 #include "gpio.h"
 #include "pwm.h"
 
-int pwm_init(uint32_t clock, uint32_t dutycycle)
+#define PSC_PWM (0)
+
+/**
+ * @brief
+ *
+ * @param MCUclock
+ * @param PWMclock
+ * @param dutycycle
+ * @return int
+ * note
+ *  Fpwm = Fclk/( (ARR+1) * (PSC + 1) )
+ *  for 10kHz = 168Mhz/( (ARR+1) * (PSC + 1) )
+ *  Duty % = CCRx/ARRx %
+ */
+int pwm_init(uint32_t MCUclock, uint32_t dutycycle, uint32_t PWMclock)
 {
-    uint32_t val = (clock / 100000); /* Frequency is 100 KHz */
-    uint32_t lvl;
+    uint32_t psc = PSC_PWM;
+    uint32_t ARRx = (MCUclock / ((psc + 1) * (PWMclock))) - 1;
+    uint32_t CCRx;
+
+    while (ARRx > 65535)
+    {
+        psc++;
+        ARRx = (MCUclock / ((psc + 1) * (PWMclock))) - 1;
+    }
 
     if (dutycycle > 100)
         return -1;
 
-    lvl = (val * dutycycle) / 100;
-    if (lvl != 0)
-        lvl--;
+    CCRx = (ARRx * dutycycle) / 100;
+
+    if (CCRx != 0)
+        CCRx--;
+
+    // TODO: add code for calcilate PSC
 
     APB1_CLOCK_RST |= TIM4_APB1_CLOCK_ER_VAL;
     __asm__ volatile("dmb");
@@ -21,12 +45,12 @@ int pwm_init(uint32_t clock, uint32_t dutycycle)
     /* disable CC */
     TIM4_CCER &= ~TIM_CCER_CC4_ENABLE;
     TIM4_CR1 = 0;
-    TIM4_PSC = 0;
-    TIM4_ARR = val - 1;
-    TIM4_CCR4 = lvl;
-    TIM4_CCMR1 &= ~(0x03 << 0);
-    TIM4_CCMR1 &= ~(0x07 << 4);
-    TIM4_CCMR1 |= TIM_CCMR1_OC1M_PWM1;
+    TIM4_PSC = psc;
+    TIM4_ARR = ARRx;
+    TIM4_CCR4 = CCRx;
+   // TIM4_CCMR1 &= ~(0x03 << 0);
+   // TIM4_CCMR1 &= ~(0x07 << 4);
+   // TIM4_CCMR1 |= TIM_CCMR1_OC1M_PWM1;
     TIM4_CCMR2 &= ~(0x03 << 8);
     TIM4_CCMR2 &= ~(0x07 << 12);
     TIM4_CCMR2 |= TIM_CCMR2_OC4M_PWM1;
