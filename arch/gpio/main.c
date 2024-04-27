@@ -23,7 +23,7 @@ void SysTick_Handler(void)
 
     msec++;
 
-    if (msec % 100 == 0)
+    if (msec % 10 == 0)
     {
         pwm_init(CPU_FREQ, duty++,FPWM);
         if (duty >= 100) duty = 0;
