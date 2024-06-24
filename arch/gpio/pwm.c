@@ -48,9 +48,9 @@ int pwm_init(uint32_t MCUclock, uint32_t dutycycle, uint32_t PWMclock)
     TIM4_PSC = psc;
     TIM4_ARR = ARRx;
     TIM4_CCR4 = CCRx;
-   // TIM4_CCMR1 &= ~(0x03 << 0);
-   // TIM4_CCMR1 &= ~(0x07 << 4);
-   // TIM4_CCMR1 |= TIM_CCMR1_OC1M_PWM1;
+    //TIM4_CCMR1 &= ~(0x03 << 0);
+    //TIM4_CCMR1 &= ~(0x07 << 4);
+    //TIM4_CCMR1 |= TIM_CCMR1_OC1M_PWM1;
     TIM4_CCMR2 &= ~(0x03 << 8);
     TIM4_CCMR2 &= ~(0x07 << 12);
     TIM4_CCMR2 |= TIM_CCMR2_OC4M_PWM1;
