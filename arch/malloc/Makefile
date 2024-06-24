@@ -16,7 +16,7 @@ LSCRIPT_APP:=app.ld
 OBJCOPY:=$(CROSS_COMPILE)objcopy
 
 CFLAGS:=$(MCU) $(OPT) -g -Wall -Wno-main -ffreestanding -nostdlib
-LDFLAGS:=-gc-sections -nostdlib
+LDFLAGS:=-gc-sections -nostdlib -nostartfiles
 
 all: app.bin
 
